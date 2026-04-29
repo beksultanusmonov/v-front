@@ -29,7 +29,7 @@ function DashboardShell({ children }) {
   }, [location.state])
 
   const role = authState?.role === 'company' ? 'company' : 'employee'
-  const userId = authState?.id || ''
+  const userId = authState?.id || authState?.userId || ''
   const fullName = authState?.fullName || 'Foydalanuvchi'
   const email = authState?.email || 'demo@yourjob.uz'
   const companyName = authState?.companyName || ''

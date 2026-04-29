@@ -71,6 +71,8 @@ function RegisterPage() {
 
       navigate(role === 'company' ? '/main/all-vacancy' : '/main/profile', {
         state: {
+          id: user.id ?? user.userId ?? null,
+          userId: user.id ?? user.userId ?? null,
           role: user.role || role,
           fullName: user.fullName || formData.fullName,
           email: user.email || formData.email,

@@ -55,7 +55,7 @@ function MyVacancyPage() {
         const items = await fetchVacancies()
         if (!isMounted) return
         const owned = items.filter((item) => {
-          if (!ownerId) return true
+          if (!ownerId) return false
           return String(item.ownerUserId || '') === ownerId
         })
         setVacancies(owned)
@@ -84,6 +84,10 @@ function MyVacancyPage() {
 
   const handleCreateOrUpdateVacancy = async (event) => {
     event.preventDefault()
+    if (!ownerId) {
+      setFormError('Akkount ID topilmadi. Qayta login qilib ko‘ring.')
+      return
+    }
     if (!form.title.trim() || !form.location.trim() || !form.experience.trim() || !form.about.trim()) {
       setFormError('Title, location, experience va about maydonlari majburiy.')
       return
@@ -106,7 +110,7 @@ function MyVacancyPage() {
     const vacancyPayload = {
       title: form.title.trim(),
       company: companyName || 'My Company',
-      ownerUserId: userId || null,
+      ownerUserId: ownerId,
       location: form.location.trim(),
       type: form.type,
       level: form.level,
@@ -131,7 +135,7 @@ function MyVacancyPage() {
       }
       const items = await fetchVacancies()
       const owned = items.filter((item) => {
-        if (!ownerId) return true
+        if (!ownerId) return false
         return String(item.ownerUserId || '') === ownerId
       })
       setVacancies(owned)
