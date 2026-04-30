@@ -1,7 +1,7 @@
 import api from './api'
 
-export async function fetchVacancies() {
-  const { data } = await api.get('/vacancies')
+export async function fetchVacancies(params = undefined) {
+  const { data } = await api.get('/vacancies', params ? { params } : undefined)
   return Array.isArray(data) ? data : []
 }
 
@@ -17,6 +17,11 @@ export async function createVacancy(payload) {
 
 export async function updateVacancy(vacancyId, payload) {
   const { data } = await api.put(`/vacancies/${vacancyId}`, payload)
+  return data
+}
+
+export async function deleteVacancy(vacancyId, payload) {
+  const { data } = await api.delete(`/vacancies/${vacancyId}`, { data: payload })
   return data
 }
 

@@ -4,6 +4,7 @@ import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
 import HomeLayout from './pages/layouts/HomeLayout'
 import MainLayout from './pages/layouts/MainLayout'
+import AdminLayout from './pages/layouts/AdminLayout'
 import RegisterLayout from './pages/layouts/RegisterLayout'
 import AllVacancyPage from './pages/main/AllVacancyPage'
 import MyVacancyPage from './pages/main/MyVacancyPage'
@@ -12,6 +13,9 @@ import VacancyDetailPage from './pages/main/VacancyDetailPage'
 import EmployeeResumePage from './pages/main/EmployeeResumePage'
 import EmployeeCoursesPage from './pages/main/EmployeeCoursesPage'
 import EmployeeCourseDetailPage from './pages/main/EmployeeCourseDetailPage'
+import AdminPanelPage from './pages/main/AdminPanelPage'
+import AdminUsersPage from './pages/main/AdminUsersPage'
+import AdminCompaniesPage from './pages/main/AdminCompaniesPage'
 import AboutPage from './pages/AboutPage'
 import CoursesPage from './pages/CoursesPage'
 import FaqPage from './pages/FaqPage'
@@ -52,6 +56,16 @@ const routes = createBrowserRouter([
       { path: 'courses', element: <EmployeeCoursesPage /> },
       { path: 'courses/:courseId', element: <EmployeeCourseDetailPage /> },
       { path: 'profile', element: <ProfilePage /> },
+    ],
+  },
+  {
+    path: '/admin',
+    element: <AdminLayout />,
+    children: [
+      { index: true, element: <Navigate to="panel" replace /> },
+      { path: 'panel', element: <AdminPanelPage /> },
+      { path: 'users', element: <AdminUsersPage /> },
+      { path: 'companies', element: <AdminCompaniesPage /> },
     ],
   },
   {

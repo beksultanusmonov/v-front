@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { toast } from 'react-toastify'
 import { fetchVacancyById, applyToVacancy } from '../../lib/contentApi'
+import { subscribeEmployeeEvents } from '../../lib/eventsApi'
 import { getResumeByEmail } from '../../lib/resumeApi'
 import { useTheme } from '../../theme/ThemeContext'
 import { formatSalaryUzs } from '../../lib/salary'
@@ -42,6 +43,24 @@ function VacancyDetailPage({ basePath = '/main/all-vacancy' }) {
       isMounted = false
     }
   }, [vacancyId])
+
+  useEffect(() => {
+    if (role !== 'employee') return undefined
+    return subscribeEmployeeEvents({
+      userId,
+      email,
+      onEvent: async (event) => {
+        const eventVacancyId = String(event?.payload?.vacancyId || '')
+        if (eventVacancyId && eventVacancyId !== String(vacancyId)) return
+        try {
+          const item = await fetchVacancyById(vacancyId)
+          setVacancy(item || null)
+        } catch {
+          // keep existing state on transient SSE refresh errors
+        }
+      },
+    })
+  }, [role, userId, email, vacancyId])
 
   const handleApply = async () => {
     if (!email) {
@@ -196,18 +215,6 @@ function VacancyDetailPage({ basePath = '/main/all-vacancy' }) {
             </section>
 
             <section className={`mt-6 border-t pt-5 ${dividerClasses}`}>
-              <h4 className={`text-xl font-bold ${titleClasses}`}>Vazifalar</h4>
-              <ul className={`mt-3 space-y-2 text-sm ${normalText}`}>
-                {(vacancy.responsibilities || vacancy.requirements || []).map((item) => (
-                  <li key={item} className="flex items-start gap-2">
-                    <span className="mt-1 text-blue-600">→</span>
-                    <span>{item}</span>
-                  </li>
-                ))}
-              </ul>
-            </section>
-
-            <section className={`mt-6 border-t pt-5 ${dividerClasses}`}>
               <h4 className={`text-xl font-bold ${titleClasses}`}>Ko‘nikmalar</h4>
               <div className="mt-3 flex flex-wrap gap-2">
                 {(vacancy.technologies || []).map((tech) => (
@@ -267,26 +274,6 @@ function VacancyDetailPage({ basePath = '/main/all-vacancy' }) {
               <p className={`mt-3 line-clamp-3 text-sm ${mutedText}`}>{vacancy.about}</p>
             </article>
 
-            {role === 'company' && isOwner ? (
-              <article className={`rounded-3xl border p-4 ${cardClasses}`}>
-                <h4 className={`text-sm font-bold ${titleClasses}`}>Topshirilgan resumelar</h4>
-                <p className={`mt-2 text-sm ${mutedText}`}>
-                  Topshirilganlar soni: <span className="font-semibold">{(vacancy.applicantsList || []).length}</span>
-                </p>
-                <p className={`mt-1 text-xs ${mutedText}`}>
-                  Nomzodlar ro‘yxati faqat `My Vacancy` bo‘limida ko‘rinadi.
-                </p>
-              </article>
-            ) : null}
-
-            {role === 'company' && !isOwner ? (
-              <article className={`rounded-3xl border p-4 ${cardClasses}`}>
-                <h4 className={`text-sm font-bold ${titleClasses}`}>Topshirilgan resumelar</h4>
-                <p className={`mt-2 text-sm ${mutedText}`}>
-                  Bu vakansiya sizga tegishli emasligi sababli nomzodlar ro‘yxatini ko‘ra olmaysiz.
-                </p>
-              </article>
-            ) : null}
           </aside>
         </div>
       </section>

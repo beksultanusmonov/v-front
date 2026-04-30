@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import { fetchVacancies } from '../../lib/contentApi'
+import { subscribeEmployeeEvents } from '../../lib/eventsApi'
+import { getResumeByEmail } from '../../lib/resumeApi'
 
 function formatRelativeDate(isoDate) {
   if (!isoDate) return 'Hozirgina'
@@ -30,15 +32,8 @@ function ProfilePage() {
     companyName: companyName || '',
   })
   const [allVacancies, setAllVacancies] = useState([])
-  const authMeta = (() => {
-    try {
-      const raw = localStorage.getItem('yourjob_auth')
-      return raw ? JSON.parse(raw) : {}
-    } catch {
-      return {}
-    }
-  })()
-
+  const [resumeProgress, setResumeProgress] = useState('0%')
+  const [showAppliedDetails, setShowAppliedDetails] = useState(false)
   const initials = fullName
     .split(' ')
     .filter(Boolean)
@@ -61,10 +56,66 @@ function ProfilePage() {
     }
   }, [])
 
+  useEffect(() => {
+    if (role !== 'employee') return undefined
+    return subscribeEmployeeEvents({
+      userId: String(userId || '').trim(),
+      email: String(email || '').trim().toLowerCase(),
+      onEvent: async () => {
+        try {
+          const items = await fetchVacancies()
+          setAllVacancies(Array.isArray(items) ? items : [])
+        } catch {
+          setAllVacancies([])
+        }
+      },
+    })
+  }, [role, userId, email])
+
+  useEffect(() => {
+    if (role !== 'employee') return undefined
+    let isMounted = true
+    ;(async () => {
+      try {
+        const resume = await getResumeByEmail(email, userId)
+        if (!isMounted) return
+        if (!resume) {
+          setResumeProgress('0%')
+          return
+        }
+        const requiredFields = ['fullName', 'email', 'phone', 'location', 'summary', 'skills', 'experience', 'education']
+        const filledCount = requiredFields.filter((field) => String(resume[field] || '').trim().length > 0).length
+        const progress = Math.round((filledCount / requiredFields.length) * 100)
+        setResumeProgress(`${progress}%`)
+      } catch {
+        if (isMounted) setResumeProgress('0%')
+      }
+    })()
+    return () => {
+      isMounted = false
+    }
+  }, [role, email, userId])
+
   const ownedVacancies = useMemo(() => {
     if (role !== 'company') return []
     return allVacancies.filter((item) => String(item.ownerUserId || '') === String(userId || ''))
   }, [allVacancies, role, userId])
+
+  const appliedVacancies = useMemo(() => {
+    if (role !== 'employee') return []
+    const normalizedEmail = String(email || '').toLowerCase().trim()
+    const normalizedUserId = String(userId || '').trim()
+    return allVacancies
+      .map((vacancy) => {
+        const applicant = (vacancy.applicantsList || []).find((candidate) => {
+          if (normalizedUserId && String(candidate.userId || '') === normalizedUserId) return true
+          return String(candidate.email || '').toLowerCase() === normalizedEmail
+        })
+        if (!applicant) return null
+        return { vacancy, applicant }
+      })
+      .filter(Boolean)
+  }, [allVacancies, role, email, userId])
 
   const profileStats =
     role === 'company'
@@ -78,19 +129,14 @@ function ProfilePage() {
             value: String(ownedVacancies.filter((item) => item.status === 'inactive').length),
           },
           {
-            label: 'Jami nomzodlar',
-            value: String(
-              ownedVacancies.reduce(
-                (sum, item) => sum + (Array.isArray(item.applicantsList) ? item.applicantsList.length : item.applicants || 0),
-                0
-              )
-            ),
+            label: 'User ID',
+            value: String(userId || 'ID yo‘q'),
           },
         ]
       : [
-          { label: 'Mavjud vakansiyalar', value: String(allVacancies.length) },
+          { label: 'Topshirilgan vakansiyalar', value: String(appliedVacancies.length), key: 'applied-vacancies' },
           { label: 'Profil holati', value: 'Faol' },
-          { label: 'Kurs progress', value: '68%' },
+          { label: 'Resume progress', value: resumeProgress },
         ]
 
   const handleProfileInput = (event) => {
@@ -102,12 +148,13 @@ function ProfilePage() {
 
   const handleProfileSave = (event) => {
     event.preventDefault()
+    const immutableEmail = String(email || '').trim()
 
-    if (!profileForm.fullName.trim() || !profileForm.email.trim()) {
+    if (!profileForm.fullName.trim() || !immutableEmail) {
       setProfileError('Ism va email maydonlari majburiy.')
       return
     }
-    if (!/\S+@\S+\.\S+/.test(profileForm.email)) {
+    if (!/\S+@\S+\.\S+/.test(immutableEmail)) {
       setProfileError('Email formati noto‘g‘ri.')
       return
     }
@@ -128,7 +175,7 @@ function ProfilePage() {
     const nextAuth = {
       ...currentAuth,
       fullName: profileForm.fullName.trim(),
-      email: profileForm.email.trim(),
+      email: immutableEmail,
       companyName: role === 'company' ? profileForm.companyName.trim() : '',
       profileUpdatedAt: new Date().toISOString(),
     }
@@ -232,15 +279,64 @@ function ProfilePage() {
 
         <div className="mt-5 grid gap-3 sm:grid-cols-3">
           {profileStats.map((item) => (
-            <div key={item.label} className="rounded-xl border border-slate-800 bg-slate-900/70 p-4">
-              <p className="text-[11px] uppercase tracking-wider text-slate-400">{item.label}</p>
-              <p className="mt-1 text-xl font-black text-white">{item.value}</p>
-            </div>
+            item.key === 'applied-vacancies' ? (
+              <button
+                key={item.label}
+                type="button"
+                onClick={() => setShowAppliedDetails((prev) => !prev)}
+                className="rounded-xl border border-slate-800 bg-slate-900/70 p-4 text-left transition hover:border-indigo-400/60"
+              >
+                <p className="text-[11px] uppercase tracking-wider text-slate-400">{item.label}</p>
+                <p className="mt-1 text-xl font-black text-white">{item.value}</p>
+                <p className="mt-1 text-xs font-semibold text-cyan-300">
+                  {showAppliedDetails ? 'Yopish' : 'Ko‘rish uchun bosing'}
+                </p>
+              </button>
+            ) : (
+              <div key={item.label} className="rounded-xl border border-slate-800 bg-slate-900/70 p-4">
+                <p className="text-[11px] uppercase tracking-wider text-slate-400">{item.label}</p>
+                <p className="mt-1 text-xl font-black text-white">{item.value}</p>
+              </div>
+            )
           ))}
         </div>
-        <p className="mt-4 text-xs font-semibold text-slate-400">
-          Profil oxirgi yangilanishi: {formatRelativeDate(authMeta.profileUpdatedAt)}
-        </p>
+        {role === 'employee' && showAppliedDetails ? (
+          <div className="mt-4 space-y-3 rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
+            <h4 className="text-sm font-bold text-white">Topshirilgan vakansiyalar</h4>
+            {appliedVacancies.length === 0 ? (
+              <p className="text-sm text-slate-300">Hozircha vakansiyaga ariza topshirmagansiz.</p>
+            ) : (
+              appliedVacancies.map(({ vacancy, applicant }) => (
+                <article key={`${vacancy.id}-${applicant.id}`} className="rounded-xl border border-slate-700 bg-slate-900/70 p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-bold text-white">{vacancy.title}</p>
+                      <p className="mt-1 text-xs text-slate-300">
+                        {vacancy.company || 'My Company'} • {vacancy.location}
+                      </p>
+                    </div>
+                    <span
+                      className={`rounded-md px-2 py-1 text-[11px] font-semibold ${
+                        applicant.status === 'accepted'
+                          ? 'bg-emerald-500/20 text-emerald-200'
+                          : applicant.status === 'rejected'
+                            ? 'bg-rose-500/20 text-rose-200'
+                            : 'bg-amber-500/20 text-amber-200'
+                      }`}
+                    >
+                      {applicant.status === 'accepted'
+                        ? 'Qabul qilingan'
+                        : applicant.status === 'rejected'
+                          ? 'Rad qilingan'
+                          : 'Ko‘rib chiqilmoqda'}
+                    </span>
+                  </div>
+                  <p className="mt-2 text-xs text-slate-400">Topshirilgan: {formatRelativeDate(applicant.submittedAt)}</p>
+                </article>
+              ))
+            )}
+          </div>
+        ) : null}
         {profileSuccess ? <p className="mt-4 text-sm font-semibold text-emerald-300">{profileSuccess}</p> : null}
       </article>
 
@@ -269,9 +365,9 @@ function ProfilePage() {
               <input
                 name="email"
                 value={profileForm.email}
-                onChange={handleProfileInput}
+                readOnly
                 placeholder="Email"
-                className="w-full rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-2 text-sm text-slate-100 outline-none focus:border-indigo-400"
+                className="w-full cursor-not-allowed rounded-lg border border-slate-700 bg-slate-800/80 px-3 py-2 text-sm text-slate-300 outline-none"
               />
               {role === 'company' ? (
                 <input
@@ -336,19 +432,6 @@ function ProfilePage() {
 
         <article className="rounded-2xl border border-slate-800 bg-slate-950/65 p-5">
           <h4 className="text-base font-bold text-white">Security</h4>
-          <div className="mt-4 space-y-3">
-            <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-3">
-              <p className="text-xs uppercase tracking-wider text-slate-400">Parol</p>
-              <p className="mt-1 text-sm font-semibold text-slate-100">
-                Oxirgi yangilanish: {formatRelativeDate(authMeta.passwordUpdatedAt)}
-              </p>
-            </div>
-            <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-3">
-              <p className="text-xs uppercase tracking-wider text-slate-400">2FA</p>
-              <p className="mt-1 text-sm font-semibold text-amber-300">Hozircha yoqilmagan</p>
-            </div>
-          </div>
-
           <form className="mt-4 space-y-3" onSubmit={handlePasswordSubmit}>
             <input
               type="password"

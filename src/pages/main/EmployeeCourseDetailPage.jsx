@@ -110,6 +110,11 @@ function EmployeeCourseDetailPage() {
     return Math.round((completed / total) * 100)
   }, [course, progress])
 
+  const currentCourseCertificate = useMemo(() => {
+    const merged = awardedCertificate ? [awardedCertificate, ...certificates] : certificates
+    return merged.find((cert) => String(cert?.courseId || '') === String(courseId || '')) || null
+  }, [awardedCertificate, certificates, courseId])
+
   const downloadCertificate = async (cert) => {
     if (!certificateRef.current) {
       toast.error('Sertifikat topilmadi.')
@@ -332,10 +337,10 @@ function EmployeeCourseDetailPage() {
         </div>
       </article>
 
-      {(awardedCertificate || certificates.length > 0) && fullName ? (
+      {progress?.completed && currentCourseCertificate && fullName ? (
         <article className="rounded-2xl border border-amber-300/25 bg-slate-950/70 p-5">
           <h4 className="text-base font-bold text-amber-200">Sertifikat</h4>
-          {(awardedCertificate ? [awardedCertificate] : certificates).slice(0, 1).map((cert) => (
+          {[currentCourseCertificate].map((cert) => (
             <div key={cert.id} className="mt-3 space-y-3">
               <div
                 ref={certificateRef}

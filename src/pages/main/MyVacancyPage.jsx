@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
-import { createVacancy, fetchVacancies, updateVacancy } from '../../lib/contentApi'
+import { toast } from 'react-toastify'
+import { createVacancy, deleteVacancy, fetchVacancies, updateVacancy } from '../../lib/contentApi'
+import { subscribeCompanyEvents } from '../../lib/eventsApi'
 import { getResumeById } from '../../lib/resumeApi'
 import { formatSalaryUzs, parseSalary } from '../../lib/salary'
 
@@ -30,12 +32,26 @@ function splitByComma(value = '') {
     .filter(Boolean)
 }
 
+function filterOwnedVacancies(items, ownerId, userId, email, companyName) {
+  const ownerCandidates = [ownerId, userId, email]
+    .map((item) => String(item || '').trim().toLowerCase())
+    .filter(Boolean)
+  const normalizedCompany = String(companyName || '').trim().toLowerCase()
+  return (Array.isArray(items) ? items : []).filter((item) => {
+    const vacancyOwner = String(item.ownerUserId || '').trim().toLowerCase()
+    if (vacancyOwner && ownerCandidates.includes(vacancyOwner)) return true
+    if (!vacancyOwner && normalizedCompany) {
+      return String(item.company || '').trim().toLowerCase() === normalizedCompany
+    }
+    return false
+  })
+}
+
 function MyVacancyPage() {
-  const { userId, companyName } = useOutletContext()
+  const { userId, companyName, email } = useOutletContext()
   const [vacancies, setVacancies] = useState([])
   const [form, setForm] = useState(initialForm)
   const [formError, setFormError] = useState('')
-  const [serverError, setServerError] = useState('')
   const [activeFilter, setActiveFilter] = useState('all')
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
   const [editingVacancyId, setEditingVacancyId] = useState(null)
@@ -46,30 +62,39 @@ function MyVacancyPage() {
   const [resumeError, setResumeError] = useState('')
   const [resumeCache, setResumeCache] = useState({})
 
-  const ownerId = userId ? String(userId) : ''
-
+  const ownerId = String(userId || email || '').trim()
   useEffect(() => {
     let isMounted = true
     ;(async () => {
       try {
         const items = await fetchVacancies()
         if (!isMounted) return
-        const owned = items.filter((item) => {
-          if (!ownerId) return false
-          return String(item.ownerUserId || '') === ownerId
-        })
-        setVacancies(owned)
+        setVacancies(filterOwnedVacancies(items, ownerId, userId, email, companyName))
       } catch {
         if (isMounted) {
-          setVacancies([])
-          setServerError('Vakansiyalarni yuklashda xatolik yuz berdi.')
+          toast.error('Vakansiyalarni yuklashda xatolik yuz berdi.')
         }
       }
     })()
     return () => {
       isMounted = false
     }
-  }, [ownerId])
+  }, [ownerId, userId, email, companyName])
+
+  useEffect(() => {
+    if (!ownerId) return undefined
+    return subscribeCompanyEvents({
+      ownerUserId: ownerId,
+      onEvent: async () => {
+        try {
+          const items = await fetchVacancies()
+          setVacancies(filterOwnedVacancies(items, ownerId, userId, email, companyName))
+        } catch {
+          // SSE refresh xatoda mavjud ro'yxat saqlanadi
+        }
+      },
+    })
+  }, [ownerId, userId, email, companyName])
 
   const filteredVacancies = useMemo(() => {
     if (activeFilter === 'all') return vacancies
@@ -126,22 +151,21 @@ function MyVacancyPage() {
     try {
       if (editingVacancyId) {
         await updateVacancy(editingVacancyId, vacancyPayload)
+        toast.success('Vakansiya muvaffaqiyatli yangilandi.')
       } else {
         await createVacancy({
           ...vacancyPayload,
           applicantsList: [],
           status: 'inactive',
         })
+        toast.success('Vakansiya muvaffaqiyatli yaratildi.')
       }
       const items = await fetchVacancies()
-      const owned = items.filter((item) => {
-        if (!ownerId) return false
-        return String(item.ownerUserId || '') === ownerId
-      })
-      setVacancies(owned)
-      setServerError('')
-    } catch {
-      setFormError('Vakansiyani saqlashda xatolik yuz berdi.')
+      setVacancies(filterOwnedVacancies(items, ownerId, userId, email, companyName))
+    } catch (error) {
+      const message = error?.response?.data?.message || 'Vakansiyani saqlashda xatolik yuz berdi.'
+      setFormError(message)
+      toast.error(message)
       return
     }
 
@@ -158,6 +182,7 @@ function MyVacancyPage() {
       await updateVacancy(id, {
         status: current.status === 'active' ? 'inactive' : 'active',
       })
+      const nextStatus = current.status === 'active' ? 'inactive' : 'active'
       setVacancies((prev) =>
         prev.map((item) =>
           String(item.id) === String(id)
@@ -165,8 +190,36 @@ function MyVacancyPage() {
             : item
         )
       )
-    } catch {
-      setServerError('Vakansiya statusini yangilashda xatolik yuz berdi.')
+      toast.success(nextStatus === 'active' ? 'Vakansiya active qilindi.' : 'Vakansiya noactive qilindi.')
+    } catch (error) {
+      const message = error?.response?.data?.message || 'Vakansiya statusini yangilashda xatolik yuz berdi.'
+      toast.error(message)
+    }
+  }
+
+  const handleDeleteVacancy = async (id) => {
+    const targetVacancy = vacancies.find((item) => String(item.id) === String(id))
+    const fallbackOwner = String(targetVacancy?.ownerUserId || '').trim()
+    if (!ownerId && !fallbackOwner && !email) {
+      const message = 'Akkount ID topilmadi. Qayta login qilib ko‘ring.'
+      toast.error(message)
+      return
+    }
+    const confirmDelete = window.confirm('Ushbu vakansiyani o‘chirmoqchimisiz?')
+    if (!confirmDelete) return
+    try {
+      await deleteVacancy(id, {
+        ownerUserId: ownerId || fallbackOwner,
+        userId: userId || '',
+        email: email || '',
+        companyName: companyName || '',
+      })
+      setVacancies((prev) => prev.filter((item) => String(item.id) !== String(id)))
+      setOpenedApplicantsId((prev) => (String(prev) === String(id) ? null : prev))
+      toast.success('Vakansiya o‘chirildi.')
+    } catch (error) {
+      const message = error?.response?.data?.message || 'Vakansiyani o‘chirishda xatolik yuz berdi.'
+      toast.error(message)
     }
   }
 
@@ -189,8 +242,10 @@ function MyVacancyPage() {
           return { ...item, applicantsList, updatedAt: new Date().toISOString() }
         })
       )
-    } catch {
-      setServerError('Nomzod holatini yangilashda xatolik yuz berdi.')
+      toast.success('Nomzod holati yangilandi.')
+    } catch (error) {
+      const message = error?.response?.data?.message || 'Nomzod holatini yangilashda xatolik yuz berdi.'
+      toast.error(message)
     }
   }
 
@@ -417,7 +472,6 @@ function MyVacancyPage() {
       </div>
 
       <div className="space-y-3">
-        {serverError ? <p className="text-sm font-semibold text-rose-300">{serverError}</p> : null}
         {filteredVacancies.map((vacancy) => (
           <article
             key={vacancy.id}
@@ -490,6 +544,13 @@ function MyVacancyPage() {
                 className="rounded-lg bg-indigo-500/90 px-3 py-2 text-xs font-semibold text-white transition hover:bg-indigo-400"
               >
                 {vacancy.status === 'active' ? 'Noactive qilish' : 'Active qilish'}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDeleteVacancy(vacancy.id)}
+                className="rounded-lg bg-rose-500/90 px-3 py-2 text-xs font-semibold text-white transition hover:bg-rose-400"
+              >
+                O‘chirish
               </button>
             </div>
 

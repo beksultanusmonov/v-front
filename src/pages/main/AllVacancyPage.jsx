@@ -6,10 +6,7 @@ import { fetchVacancies } from '../../lib/contentApi'
 import { formatSalaryUzs } from '../../lib/salary'
 
 function isActiveVacancy(status) {
-  const normalized = String(status || '')
-    .trim()
-    .toLowerCase()
-  return normalized === 'active' || normalized === 'faol'
+  return String(status || '').trim().toLowerCase() === 'active'
 }
 
 function AllVacancyPage({ basePath = '/main/all-vacancy' }) {
@@ -58,8 +55,8 @@ function AllVacancyPage({ basePath = '/main/all-vacancy' }) {
     let isMounted = true
     ;(async () => {
       try {
-        const apiItems = await fetchVacancies()
-        const onlyActive = apiItems.filter((item) => isActiveVacancy(item.status))
+        const apiItems = await fetchVacancies({ status: 'active' })
+        const onlyActive = (Array.isArray(apiItems) ? apiItems : []).filter((item) => isActiveVacancy(item.status))
         if (isMounted) setVacancies(onlyActive)
       } catch {
         if (isMounted) setVacancies([])
@@ -72,23 +69,42 @@ function AllVacancyPage({ basePath = '/main/all-vacancy' }) {
 
   if (!isPublicVacanciesPage) {
     return (
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 2xl:grid-cols-3">
-        {filteredVacancies.map((vacancy) => (
-          <Link
-            key={vacancy.id}
-            to={`${basePath}/${vacancy.id}`}
-            className="rounded-2xl border border-slate-800 bg-slate-950/65 p-5 transition hover:-translate-y-1 hover:border-indigo-400/50"
-          >
-            <h3 className="line-clamp-2 text-lg font-bold text-white">{vacancy.title}</h3>
-            <p className="mt-1 text-sm text-slate-300">{vacancy.company || 'My Company'}</p>
-            <p className="mt-2 line-clamp-2 text-sm text-slate-400">{vacancy.about}</p>
-            <div className="mt-3 flex flex-wrap gap-2 text-xs">
-              <span className="rounded-md bg-indigo-500/20 px-2 py-1 text-indigo-200">{vacancy.type}</span>
-              <span className="rounded-md bg-cyan-500/20 px-2 py-1 text-cyan-200">{vacancy.location}</span>
-              <span className="rounded-md bg-emerald-500/20 px-2 py-1 text-emerald-200">{vacancy.experience}</span>
-            </div>
-          </Link>
-        ))}
+      <div className="space-y-4">
+        <div className="rounded-2xl border border-slate-800 bg-slate-950/65 p-3 sm:p-4">
+          <div className="relative max-w-md">
+            <FontAwesomeIcon
+              icon={faMagnifyingGlass}
+              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-500"
+            />
+            <input
+              type="text"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Vakansiya qidirish..."
+              className="h-10 w-full rounded-xl border border-slate-700 bg-slate-900/80 pl-8 pr-3 text-sm text-slate-100 outline-none transition focus:border-cyan-400"
+            />
+          </div>
+          <p className="mt-2 text-xs font-semibold text-slate-400">{filteredVacancies.length} ta natija</p>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 2xl:grid-cols-3">
+          {filteredVacancies.map((vacancy) => (
+            <Link
+              key={vacancy.id}
+              to={`${basePath}/${vacancy.id}`}
+              className="rounded-2xl border border-slate-800 bg-slate-950/65 p-5 transition hover:-translate-y-1 hover:border-indigo-400/50"
+            >
+              <h3 className="line-clamp-2 text-lg font-bold text-white">{vacancy.title}</h3>
+              <p className="mt-1 text-sm text-slate-300">{vacancy.company || 'My Company'}</p>
+              <p className="mt-2 line-clamp-2 text-sm text-slate-400">{vacancy.about}</p>
+              <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                <span className="rounded-md bg-indigo-500/20 px-2 py-1 text-indigo-200">{vacancy.type}</span>
+                <span className="rounded-md bg-cyan-500/20 px-2 py-1 text-cyan-200">{vacancy.location}</span>
+                <span className="rounded-md bg-emerald-500/20 px-2 py-1 text-emerald-200">{vacancy.experience}</span>
+              </div>
+            </Link>
+          ))}
+        </div>
       </div>
     )
   }

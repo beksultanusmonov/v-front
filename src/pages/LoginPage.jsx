@@ -24,7 +24,9 @@ function LoginPage() {
     }
     try {
       const user = await loginUser({ email: formData.email, password: formData.password })
-      navigate(user.role === 'company' ? '/main/all-vacancy' : '/main/profile', {
+      const targetPath =
+        user.role === 'admin' ? '/admin/panel' : user.role === 'company' ? '/main/all-vacancy' : '/main/profile'
+      navigate(targetPath, {
         state: {
           id: user.id ?? user.userId ?? null,
           userId: user.id ?? user.userId ?? null,
